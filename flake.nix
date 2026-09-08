@@ -6,7 +6,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    naersk.url = "github:nix-community/naersk";
     git-hooks.url = "github:cachix/git-hooks.nix";
   };
 
@@ -48,11 +47,13 @@
         };
 
         config = lib.mkIf cfg.enable {
-          users.users.daily-stoic = {
-            isSystemUser = true;
-            group = "daily-stoic";
+          users = {
+            users.daily-stoic = {
+              isSystemUser = true;
+              group = "daily-stoic";
+            };
+            groups.daily-stoic = {};
           };
-          users.groups.daily-stoic = {};
 
           systemd.services.daily-stoic = {
             description = "Daily Stoic";
@@ -85,17 +86,24 @@
           inherit system;
           overlays = [inputs.rust-overlay.overlays.default];
         };
-
         rustToolchain = pkgs.rust-bin.stable.latest.default;
-
-        naerskLib = pkgs.callPackage inputs.naersk {
+        rustPlatform = pkgs.makeRustPlatform {
           cargo = rustToolchain;
           rustc = rustToolchain;
         };
       in {
-        packages.default = naerskLib.buildPackage {
+        packages.default = rustPlatform.buildRustPackage {
+          pname = "daily-stoic";
+          version = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           src = ./.;
           SQLX_OFFLINE = "true";
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+          nativeBuildInputs = [pkgs.pkg-config];
+          buildInputs = [pkgs.openssl];
+          release = true;
+          doCheck = false;
           postInstall = ''
             mkdir -p $out/share/daily-stoic
             cp -r $src/migrations $out/share/daily-stoic/
@@ -112,9 +120,7 @@
             openssl.dev
             pkg-config
           ];
-
           RUST_BACKTRACE = 1;
-
           shellHook = ''
             echo "📚 Stay Stoic... and memory safe."
             echo "🦀 $(rustc --version)"
